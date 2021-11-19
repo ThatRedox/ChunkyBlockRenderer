@@ -1,0 +1,34 @@
+plugins {
+    id 'java'
+}
+
+repositories {
+    mavenCentral()
+    maven {
+        url 'https://repo.lemaik.de/'
+    }
+}
+
+configurations {
+    implementation.extendsFrom(provided)
+    implementation.extendsFrom(bundled)
+}
+
+dependencies {
+    bundled 'se.llbit:chunky-core:2.4.1-SNAPSHOT'
+
+    // https://mvnrepository.com/artifact/commons-cli/commons-cli
+    bundled group: 'commons-cli', name: 'commons-cli', version: '1.5.0'
+}
+
+jar {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+    manifest {
+        attributes "Main-Class": "blockrenderer.Main"
+    }
+
+    from {
+        configurations.bundled.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+}
