@@ -41,6 +41,18 @@ class CommandOctree {
     public Integer threads;
 }
 
+@Parameters(commandDescription = "Render all blocks extracted from an existing octree file.")
+class CommandBlock {
+    @Parameter(names = {"-t", "--textures"}, description = "Path to the texture pack to use.")
+    public String textures;
+
+    @Parameter(description = "Blockstate to render", required = true)
+    public String blockstate;
+
+    @Parameter(names = {"-o", "--output"}, description = "Output folder path.")
+    public File output = new File("out.png");
+}
+
 public class BlockRenderer {
     public final static int WIDTH = 256;
     public final static int HEIGHT = 256;
@@ -124,8 +136,10 @@ public class BlockRenderer {
 
     public static void main(String[] args) {
         CommandOctree octree = new CommandOctree();
+        CommandBlock blockstate = new CommandBlock();
         JCommander jc = JCommander.newBuilder()
                 .addCommand("octree", octree)
+                .addCommand("blockstate", blockstate)
                 .build();
         jc.parse(args);
 
@@ -203,6 +217,28 @@ public class BlockRenderer {
                     e.printStackTrace();
                 }
             })).join();
+        } else if ("blockstate".equals(jc.getParsedCommand())) {
+            if (blockstate.textures != null) {
+                TexturePackLoader.loadTexturePacks(blockstate.textures, false);
+            }
+            BlockPalette palette = new BlockPalette();
+            int i = palette.put(BlockParser.parse(blockstate.blockstate));
+
+            BufferedImage out = new BufferedImage(BlockRenderer.WIDTH * 2, BlockRenderer.HEIGHT, BufferedImage.TYPE_INT_ARGB);
+            Graphics outGraphics = out.getGraphics();
+
+            BufferedImage img = BlockRenderer.renderBlock(i, palette, BlockRenderer.Orientation.IsoTopWestNorth);
+            outGraphics.drawImage(img, 0, 0, null);
+
+            BufferedImage img2 = BlockRenderer.renderBlock(i, palette, BlockRenderer.Orientation.IsoBottomEastSouth);
+            outGraphics.drawImage(img2, BlockRenderer.WIDTH, 0, null);
+
+            outGraphics.dispose();
+            try (OutputStream stream = new BufferedOutputStream(new FileOutputStream(blockstate.output))) {
+                ImageIO.write(out, "PNG", stream);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
         } else {
             jc.usage();
         }
