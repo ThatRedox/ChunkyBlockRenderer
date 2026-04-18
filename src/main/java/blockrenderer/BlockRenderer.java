@@ -111,25 +111,50 @@ public class BlockRenderer {
 
         double halfWidth = WIDTH / (2.0 * HEIGHT);
         double invHeight = 1.0 / HEIGHT;
-        double[] pixel = new double[4];
-        double[] zeroPixel = new double[4];
+        double[][] RGS4 = {
+                {-0.25, 0.75},
+                {0.75, 0.25},
+                {-0.75, -0.25},
+                {0.25, -0.75}
+        };
+        double invSamples = 1.0 / RGS4.length;
 
         for (int x = 0; x < WIDTH; x++) {
             for (int y = 0; y < HEIGHT; y++) {
-                state.cam.calcViewRay(state.ray,
-                        -halfWidth + x * invHeight,
-                        -0.5 + y * invHeight);
+                double r = 0, g = 0, b = 0, a = 0;
+
+                for (int i = 0; i < RGS4.length; i++) {
+                    double offsetX = RGS4[i][0] * 0.5 + 0.5;
+                    double offsetY = RGS4[i][1] * 0.5 + 0.5;
+
+                    double u = -halfWidth + (x + offsetX) * invHeight;
+                    double v = -0.5 + (y + offsetY) * invHeight;
+
+                    state.cam.calcViewRay(state.ray, u, v);
+
                 if (state.octree.enterBlock(state.scene, state.ray, palette)) {
-                    pixel[0] = state.ray.color.x;
-                    pixel[1] = state.ray.color.y;
-                    pixel[2] = state.ray.color.z;
-                    pixel[3] = 1;
+                        double[] pixel = {
+                                state.ray.color.x,
+                                state.ray.color.y,
+                                state.ray.color.z,
+                                1
+                        };
                     PreviewFilter.INSTANCE.processPixel(pixel);
-                    for (int i = 0; i < pixel.length; i++) pixel[i] *= 255;
-                    raster.setPixel(x, y, pixel);
-                } else {
-                    raster.setPixel(x, y, zeroPixel);
+
+                        r += pixel[0];
+                        g += pixel[1];
+                        b += pixel[2];
+                        a += pixel[3];
+                    }
                 }
+
+                double[] finalPixel = new double[4];
+                finalPixel[0] = r * invSamples * 255;
+                finalPixel[1] = g * invSamples * 255;
+                finalPixel[2] = b * invSamples * 255;
+                finalPixel[3] = a * invSamples * 255;
+
+                raster.setPixel(x, y, finalPixel);
             }
         }
 
