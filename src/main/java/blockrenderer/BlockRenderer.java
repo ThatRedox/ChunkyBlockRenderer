@@ -135,6 +135,7 @@ public class BlockRenderer {
                     state.cam.calcViewRay(state.ray, u, v);
 
                     if (state.octree.enterBlock(state.scene, state.ray, palette)) {
+                        SimpleShader.shade(state.ray);
                         double[] pixel = {
                                 state.ray.color.x,
                                 state.ray.color.y,
