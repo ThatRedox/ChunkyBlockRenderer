@@ -6,7 +6,8 @@ import com.beust.jcommander.Parameters;
 import se.llbit.chunky.block.BlockSpec;
 import se.llbit.chunky.block.MinecraftBlockProvider;
 import se.llbit.chunky.chunk.BlockPalette;
-import se.llbit.chunky.renderer.postprocessing.PreviewFilter;
+import se.llbit.chunky.renderer.postprocessing.GammaCorrectionFilter;
+import se.llbit.chunky.renderer.postprocessing.SimplePixelPostProcessingFilter;
 import se.llbit.chunky.renderer.projection.ProjectionMode;
 import se.llbit.chunky.renderer.scene.Camera;
 import se.llbit.chunky.renderer.scene.Scene;
@@ -60,6 +61,7 @@ public class BlockRenderer {
     public final static int HEIGHT = 256;
 
     private final static ThreadLocal<RenderState> threadState = ThreadLocal.withInitial(RenderState::new);
+    private final static SimplePixelPostProcessingFilter POST_PROCESSING_FILTER = new GammaCorrectionFilter();
 
     private static class RenderState {
         public Scene scene;
@@ -132,14 +134,14 @@ public class BlockRenderer {
 
                     state.cam.calcViewRay(state.ray, u, v);
 
-                if (state.octree.enterBlock(state.scene, state.ray, palette)) {
+                    if (state.octree.enterBlock(state.scene, state.ray, palette)) {
                         double[] pixel = {
                                 state.ray.color.x,
                                 state.ray.color.y,
                                 state.ray.color.z,
                                 1
                         };
-                    PreviewFilter.INSTANCE.processPixel(pixel);
+                        POST_PROCESSING_FILTER.processPixel(pixel);
 
                         r += pixel[0];
                         g += pixel[1];
