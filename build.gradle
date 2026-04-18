@@ -2,10 +2,16 @@ plugins {
     id 'java'
 }
 
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
 repositories {
     mavenCentral()
     maven {
-        url 'https://repo.lemaik.de/'
+        url = 'https://repo.lemaik.de/'
     }
 }
 
@@ -16,9 +22,7 @@ configurations {
 
 dependencies {
     bundled 'se.llbit:chunky-core:2.4.1-SNAPSHOT'
-
-    // https://mvnrepository.com/artifact/commons-cli/commons-cli
-    bundled group: 'commons-cli', name: 'commons-cli', version: '1.5.0'
+    bundled "org.jcommander:jcommander:3.0"
 }
 
 jar {

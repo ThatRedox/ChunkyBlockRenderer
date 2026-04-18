@@ -1,6 +1,8 @@
 package blockrenderer;
 
-import org.apache.commons.cli.*;
+import com.beust.jcommander.JCommander;
+import com.beust.jcommander.Parameter;
+import com.beust.jcommander.Parameters;
 import se.llbit.chunky.block.BlockSpec;
 import se.llbit.chunky.block.MinecraftBlockProvider;
 import se.llbit.chunky.chunk.BlockPalette;
@@ -23,6 +25,21 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.IntStream;
 import java.util.zip.GZIPInputStream;
+
+@Parameters(commandDescription = "Render all blocks extracted from an existing octree file.")
+class CommandOctree {
+    @Parameter(names = {"-t", "--textures"}, description = "Path to the texture pack to use.")
+    public String textures;
+
+    @Parameter(names = {"-i", "--input"}, description = "Path to the input octree to take blocks from.", required = true)
+    public String input;
+
+    @Parameter(names = {"-o", "--output"}, description = "Output folder path.")
+    public String output = "./out/";
+
+    @Parameter(names = {"--threads"}, description = "Number of threads to use while rendering.")
+    public Integer threads;
+}
 
 public class BlockRenderer {
     public final static int WIDTH = 256;
@@ -50,7 +67,10 @@ public class BlockRenderer {
         IsoBottomEastSouth(-45, 225, 0),
         IsoZeros(0, 0, 0);
 
-        double yaw, pitch, roll;
+        final double yaw;
+        final double pitch;
+        final double roll;
+
         Orientation(double yaw, double pitch, double roll) {
             this.yaw = yaw;
             this.pitch = pitch;
@@ -102,82 +122,89 @@ public class BlockRenderer {
         return img;
     }
 
-    public static void main(String[] args) throws IOException, ParseException {
-        Options options = new Options();
-        options.addOption("t", "textures", true, "Path to the texture pack to use.");
-        options.addRequiredOption("i", "input", true, "Path to the input octree to take blocks from.");
-        options.addOption("o", "output", true, "Output folder path.");
-        options.addOption(null, "threads", true, "Number of threads to use while rendering.");
-
-        CommandLineParser parser = new DefaultParser();
-        CommandLine cmd = parser.parse(options, args);
+    public static void main(String[] args) {
+        CommandOctree octree = new CommandOctree();
+        JCommander jc = JCommander.newBuilder()
+                .addCommand("octree", octree)
+                .build();
+        jc.parse(args);
 
         BlockSpec.blockProviders.add(new MinecraftBlockProvider());
-        if (cmd.hasOption("t")) {
-            TexturePackLoader.loadTexturePacks(cmd.getOptionValue("t"), false);
-        }
 
-        File outputFolder;
-        if (cmd.hasOption("o")) {
-            outputFolder = new File(cmd.getOptionValue("o"));
-        } else {
-            outputFolder = new File("./out/");
-        }
-        if (!outputFolder.mkdirs()) {
-            throw new RuntimeException("Failed to create output folder.");
-        }
+        if ("octree".equals(jc.getParsedCommand())) {
+            if (octree.textures != null) {
+                TexturePackLoader.loadTexturePacks(octree.textures, false);
+            }
 
-        OctreeFileFormat.OctreeData data = OctreeFileFormat.load(
-                new DataInputStream(new GZIPInputStream(new BufferedInputStream(new FileInputStream(
-                        cmd.getOptionValue("i"))))), "PACKED");
+            File outputFolder;
+            if (octree.output != null) {
+                outputFolder = new File(octree.output);
+            } else {
+                outputFolder = new File("./out/");
+            }
+            if (!outputFolder.mkdirs()) {
+                throw new RuntimeException("Failed to create output folder.");
+            }
 
-        int size = data.palette.getPalette().size();
-
-        ForkJoinPool pool;
-        if (cmd.hasOption("threads")) {
-            pool = new ForkJoinPool(Integer.parseInt(cmd.getOptionValue("threads")));
-        } else {
-            pool = new ForkJoinPool();
-        }
-
-        AtomicInteger progress = new AtomicInteger(0);
-        ReentrantLock updateLock = new ReentrantLock();
-        long[] lastUpdate = new long[] {0};
-        long startTime = System.currentTimeMillis();
-
-        pool.submit(() -> IntStream.range(0, size).parallel().forEach(i -> {
-            BufferedImage out = new BufferedImage(BlockRenderer.WIDTH * 2, BlockRenderer.HEIGHT, BufferedImage.TYPE_INT_ARGB);
-            Graphics outGraphics = out.getGraphics();
-
-            BufferedImage img = BlockRenderer.renderBlock(i, data.palette, BlockRenderer.Orientation.IsoTopWestNorth);
-            outGraphics.drawImage(img, 0, 0, null);
-
-            BufferedImage img2 = BlockRenderer.renderBlock(i, data.palette, BlockRenderer.Orientation.IsoBottomEastSouth);
-            outGraphics.drawImage(img2, BlockRenderer.WIDTH, 0, null);
-
-            outGraphics.dispose();
-
-            try {
-                File outF = new File(outputFolder, String.format("block_%d_%s.png", i, data.palette.get(i).name.replace(':', '_')));
-                OutputStream stream = new BufferedOutputStream(new FileOutputStream(outF));
-                ImageIO.write(out, "PNG", stream);
-                stream.close();
-
-                int z = progress.incrementAndGet();
-                long time = System.currentTimeMillis();
-                if (time > (lastUpdate[0] + 100) && updateLock.tryLock()) {
-                    lastUpdate[0] = time;
-                    double t = time - startTime;
-                    t /= 1000;
-                    double eta = ((t / z) * size) - t;
-                    System.out.printf("%d / %d\t\t%.2f %%\t\tET: %d min, %d sec\tETA: %d min, %d sec\r",
-                            z, size, 100 * (double) z / size,
-                            (int) (t / 60), (int) (t % 60), (int) (eta / 60), (int) (eta % 60));
-                    updateLock.unlock();
-                }
+            OctreeFileFormat.OctreeData data;
+            try (DataInputStream dis = new DataInputStream(new GZIPInputStream(new BufferedInputStream(new FileInputStream(
+                    octree.input))))) {
+                data = OctreeFileFormat.load(
+                        dis, "PACKED");
             } catch (IOException e) {
                 e.printStackTrace();
+                System.exit(-1);
+                return;
             }
-        })).join();
+
+            int size = data.palette.getPalette().size();
+
+            ForkJoinPool pool;
+            if (octree.threads != null) {
+                pool = new ForkJoinPool(octree.threads);
+            } else {
+                pool = new ForkJoinPool();
+            }
+
+            AtomicInteger progress = new AtomicInteger(0);
+            ReentrantLock updateLock = new ReentrantLock();
+            long[] lastUpdate = new long[]{0};
+            long startTime = System.currentTimeMillis();
+
+            pool.submit(() -> IntStream.range(0, size).parallel().forEach(i -> {
+                BufferedImage out = new BufferedImage(BlockRenderer.WIDTH * 2, BlockRenderer.HEIGHT, BufferedImage.TYPE_INT_ARGB);
+                Graphics outGraphics = out.getGraphics();
+
+                BufferedImage img = BlockRenderer.renderBlock(i, data.palette, BlockRenderer.Orientation.IsoTopWestNorth);
+                outGraphics.drawImage(img, 0, 0, null);
+
+                BufferedImage img2 = BlockRenderer.renderBlock(i, data.palette, BlockRenderer.Orientation.IsoBottomEastSouth);
+                outGraphics.drawImage(img2, BlockRenderer.WIDTH, 0, null);
+
+                outGraphics.dispose();
+
+                File outF = new File(outputFolder, String.format("block_%d_%s.png", i, data.palette.get(i).name.replace(':', '_')));
+                try (OutputStream stream = new BufferedOutputStream(new FileOutputStream(outF))) {
+                    ImageIO.write(out, "PNG", stream);
+
+                    int z = progress.incrementAndGet();
+                    long time = System.currentTimeMillis();
+                    if (time > (lastUpdate[0] + 100) && updateLock.tryLock()) {
+                        lastUpdate[0] = time;
+                        double t = time - startTime;
+                        t /= 1000;
+                        double eta = ((t / z) * size) - t;
+                        System.out.printf("%d / %d\t\t%.2f %%\t\tET: %d min, %d sec\tETA: %d min, %d sec\r",
+                                z, size, 100 * (double) z / size,
+                                (int) (t / 60), (int) (t % 60), (int) (eta / 60), (int) (eta % 60));
+                        updateLock.unlock();
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            })).join();
+        } else {
+            jc.usage();
+        }
     }
 }
