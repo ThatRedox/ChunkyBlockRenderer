@@ -10,8 +10,9 @@ import se.llbit.chunky.renderer.postprocessing.PreviewFilter;
 import se.llbit.chunky.renderer.projection.ProjectionMode;
 import se.llbit.chunky.renderer.scene.Camera;
 import se.llbit.chunky.renderer.scene.Scene;
+import se.llbit.chunky.renderer.scene.biome.BiomeStructure;
 import se.llbit.chunky.resources.OctreeFileFormat;
-import se.llbit.chunky.resources.TexturePackLoader;
+import se.llbit.chunky.resources.ResourcePackLoader;
 import se.llbit.math.Octree;
 import se.llbit.math.Ray;
 
@@ -20,6 +21,7 @@ import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.awt.image.WritableRaster;
 import java.io.*;
+import java.util.Arrays;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
@@ -29,7 +31,7 @@ import java.util.zip.GZIPInputStream;
 @Parameters(commandDescription = "Render all blocks extracted from an existing octree file.")
 class CommandOctree {
     @Parameter(names = {"-t", "--textures"}, description = "Path to the texture pack to use.")
-    public String textures;
+    public File textures;
 
     @Parameter(names = {"-i", "--input"}, description = "Path to the input octree to take blocks from.", required = true)
     public String input;
@@ -44,7 +46,7 @@ class CommandOctree {
 @Parameters(commandDescription = "Render all blocks extracted from an existing octree file.")
 class CommandBlock {
     @Parameter(names = {"-t", "--textures"}, description = "Path to the texture pack to use.")
-    public String textures;
+    public File textures;
 
     @Parameter(description = "Blockstate to render", required = true)
     public String blockstate;
@@ -147,8 +149,9 @@ public class BlockRenderer {
 
         if ("octree".equals(jc.getParsedCommand())) {
             if (octree.textures != null) {
-                TexturePackLoader.loadTexturePacks(octree.textures, false);
+                ResourcePackLoader.loadResourcePacks(Arrays.asList(octree.textures));
             }
+            BiomeStructure.registerDefaults();
 
             File outputFolder;
             if (octree.output != null) {
@@ -164,7 +167,8 @@ public class BlockRenderer {
             try (DataInputStream dis = new DataInputStream(new GZIPInputStream(new BufferedInputStream(new FileInputStream(
                     octree.input))))) {
                 data = OctreeFileFormat.load(
-                        dis, "PACKED");
+                        dis, "PACKED", "WORLD_TEXTURE_2D", (step) -> {
+                        });
             } catch (IOException e) {
                 e.printStackTrace();
                 System.exit(-1);
@@ -219,7 +223,7 @@ public class BlockRenderer {
             })).join();
         } else if ("blockstate".equals(jc.getParsedCommand())) {
             if (blockstate.textures != null) {
-                TexturePackLoader.loadTexturePacks(blockstate.textures, false);
+                ResourcePackLoader.loadResourcePacks(Arrays.asList(blockstate.textures));
             }
             BlockPalette palette = new BlockPalette();
             int i = palette.put(BlockParser.parse(blockstate.blockstate));

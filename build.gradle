@@ -21,7 +21,7 @@ configurations {
 }
 
 dependencies {
-    bundled 'se.llbit:chunky-core:2.4.1-SNAPSHOT'
+    bundled 'se.llbit:chunky-core:2.5.0-SNAPSHOT'
     bundled "org.jcommander:jcommander:3.0"
 }
 
