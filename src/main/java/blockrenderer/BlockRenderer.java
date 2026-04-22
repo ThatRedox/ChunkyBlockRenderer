@@ -77,8 +77,8 @@ public class BlockRenderer {
     }
 
     public enum Orientation {
-        IsoTopWestNorth(45, 45, 180),
-        IsoBottomEastSouth(-45, 225, 0),
+        IsoTopWestNorth(-135, -45, 0),
+        IsoBottomEastSouth(45, -135, 0),
         IsoZeros(0, 0, 0);
 
         final double yaw;
