@@ -19,13 +19,17 @@ Detailed usage information is printed by running `java -jar ChunkyBlockRenderer.
 ### Render images of all blocks in an octree
 
 ```
-java -jar ChunkyBlockRenderer.java octree -i ~/.chunky/scenes/your_scene/your_scene.octree2 --textures ~/.minecraft/versions/26.1/26.1.jar
+java -jar ChunkyBlockRenderer.jar octree \
+    -i ~/.chunky/scenes/your_scene/your_scene.octree2 \
+    --textures ~/.minecraft/versions/26.1/26.1.jar
 ```
 
 ### Render an image of a blockstate
 
 ```
-java -jar ChunkyBlockRenderer.java blockstate minecraft:redstone_torch[lit=true] --textures ~/.minecraft/versions/26.1/26.1.jar
+java -jar ChunkyBlockRenderer.jar blockstate \
+    minecraft:redstone_torch[lit=true] \
+    --textures ~/.minecraft/versions/26.1/26.1.jar
 ```
 
 ### Use a different Chunky version
@@ -33,5 +37,8 @@ java -jar ChunkyBlockRenderer.java blockstate minecraft:redstone_torch[lit=true]
 This tool comes bundled with a Chunky 2.5.0 snapshot. You can replace it with a compatible one by modifying the classpath:
 
 ```
-java -cp $HOME/.chunky/lib/chunky-core-2.5.0-SNAPSHOT.459.g1db9225.jar:ChunkyBlockRenderer.jar blockrenderer.BlockRenderer blockstate minecraft:redstone_torch[lit=true]  --textures ~/.minecraft/versions/26.1/26.1.jar
+java -cp $HOME/.chunky/lib/chunky-core-2.5.0-SNAPSHOT.459.g1db9225.jar:ChunkyBlockRenderer.jar \
+    blockrenderer.BlockRenderer blockstate \
+    minecraft:redstone_torch[lit=true] \
+    --textures ~/.minecraft/versions/26.1/26.1.jar
 ```
