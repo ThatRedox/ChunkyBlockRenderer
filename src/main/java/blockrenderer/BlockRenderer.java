@@ -1,12 +1,20 @@
 package blockrenderer;
 
+import blockrenderer.antialiasing.NoSupersampling;
+import blockrenderer.antialiasing.RotatedGridSampling;
+import blockrenderer.antialiasing.SupersamplingFilter;
+import blockrenderer.renderer.Sampler;
+import blockrenderer.renderer.Shader;
+import blockrenderer.renderer.SimpleShader;
+import blockrenderer.renderer.WritableRasterPixelWriter;
 import com.beust.jcommander.JCommander;
 import com.beust.jcommander.Parameter;
 import com.beust.jcommander.Parameters;
 import se.llbit.chunky.block.BlockSpec;
 import se.llbit.chunky.block.MinecraftBlockProvider;
 import se.llbit.chunky.chunk.BlockPalette;
-import se.llbit.chunky.renderer.postprocessing.PreviewFilter;
+import se.llbit.chunky.renderer.postprocessing.GammaCorrectionFilter;
+import se.llbit.chunky.renderer.postprocessing.SimplePixelPostProcessingFilter;
 import se.llbit.chunky.renderer.projection.ProjectionMode;
 import se.llbit.chunky.renderer.scene.Camera;
 import se.llbit.chunky.renderer.scene.Scene;
@@ -41,6 +49,10 @@ class CommandOctree {
 
     @Parameter(names = {"--threads"}, description = "Number of threads to use while rendering.")
     public Integer threads;
+
+    @Parameter(names = {"--antialiasing", "--aa"}, description = "Anti aliasing filter, rotated_grid (default) or none",
+            defaultValueDescription = "Rotated grid supersampling (rotated_grid)")
+    public String antiAliasing = "rotated_grid";
 }
 
 @Parameters(commandDescription = "Render all blocks extracted from an existing octree file.")
@@ -53,6 +65,10 @@ class CommandBlock {
 
     @Parameter(names = {"-o", "--output"}, description = "Output folder path.")
     public File output = new File("out.png");
+
+    @Parameter(names = {"--antialiasing", "--aa"}, description = "Anti aliasing filter, rotated_grid (default) or none",
+            defaultValueDescription = "Rotated grid supersampling (rotated_grid)")
+    public String antiAliasing = "rotated_grid";
 }
 
 public class BlockRenderer {
@@ -60,6 +76,7 @@ public class BlockRenderer {
     public final static int HEIGHT = 256;
 
     private final static ThreadLocal<RenderState> threadState = ThreadLocal.withInitial(RenderState::new);
+    private final static SimplePixelPostProcessingFilter POST_PROCESSING_FILTER = new GammaCorrectionFilter();
 
     private static class RenderState {
         public Scene scene;
@@ -96,7 +113,7 @@ public class BlockRenderer {
         }
     }
 
-    public static BufferedImage renderBlock(int block, BlockPalette palette, Orientation orientation) {
+    public static BufferedImage renderBlock(int block, BlockPalette palette, Orientation orientation, SupersamplingFilter supersamplingFilter) {
         RenderState state = threadState.get();
 
         state.octree.set(block, 0, 0, 0);
@@ -108,30 +125,23 @@ public class BlockRenderer {
 
         BufferedImage img = new BufferedImage(WIDTH, HEIGHT, BufferedImage.TYPE_INT_ARGB);
         WritableRaster raster = img.getRaster();
+        Shader shader = new SimpleShader();
 
         double halfWidth = WIDTH / (2.0 * HEIGHT);
         double invHeight = 1.0 / HEIGHT;
-        double[] pixel = new double[4];
-        double[] zeroPixel = new double[4];
 
-        for (int x = 0; x < WIDTH; x++) {
-            for (int y = 0; y < HEIGHT; y++) {
-                state.cam.calcViewRay(state.ray,
-                        -halfWidth + x * invHeight,
-                        -0.5 + y * invHeight);
-                if (state.octree.enterBlock(state.scene, state.ray, palette)) {
-                    pixel[0] = state.ray.color.x;
-                    pixel[1] = state.ray.color.y;
-                    pixel[2] = state.ray.color.z;
-                    pixel[3] = 1;
-                    PreviewFilter.INSTANCE.processPixel(pixel);
-                    for (int i = 0; i < pixel.length; i++) pixel[i] *= 255;
-                    raster.setPixel(x, y, pixel);
-                } else {
-                    raster.setPixel(x, y, zeroPixel);
-                }
+        Sampler sampler = (x, y) -> {
+            double u = -halfWidth + x * invHeight;
+            double v = -0.5 + y * invHeight;
+            state.cam.calcViewRay(state.ray, u, v);
+            if (state.octree.enterBlock(state.scene, state.ray, palette)) {
+                shader.shade(state.ray);
+                return new double[]{state.ray.color.x, state.ray.color.y, state.ray.color.z, 1};
             }
-        }
+            return new double[]{0, 0, 0, 0};
+        };
+
+        supersamplingFilter.renderWithSampling(WIDTH, HEIGHT, sampler, new WritableRasterPixelWriter(raster, POST_PROCESSING_FILTER));
 
         return img;
     }
@@ -189,14 +199,16 @@ public class BlockRenderer {
             long[] lastUpdate = new long[]{0};
             long startTime = System.currentTimeMillis();
 
+            SupersamplingFilter sampling = "rotated_grid".equals(octree.antiAliasing) ? new RotatedGridSampling() : new NoSupersampling();
+
             pool.submit(() -> IntStream.range(0, size).parallel().forEach(i -> {
                 BufferedImage out = new BufferedImage(BlockRenderer.WIDTH * 2, BlockRenderer.HEIGHT, BufferedImage.TYPE_INT_ARGB);
                 Graphics outGraphics = out.getGraphics();
 
-                BufferedImage img = BlockRenderer.renderBlock(i, data.palette, BlockRenderer.Orientation.IsoTopWestNorth);
+                BufferedImage img = BlockRenderer.renderBlock(i, data.palette, BlockRenderer.Orientation.IsoTopWestNorth, sampling);
                 outGraphics.drawImage(img, 0, 0, null);
 
-                BufferedImage img2 = BlockRenderer.renderBlock(i, data.palette, BlockRenderer.Orientation.IsoBottomEastSouth);
+                BufferedImage img2 = BlockRenderer.renderBlock(i, data.palette, BlockRenderer.Orientation.IsoBottomEastSouth, sampling);
                 outGraphics.drawImage(img2, BlockRenderer.WIDTH, 0, null);
 
                 outGraphics.dispose();
@@ -231,10 +243,12 @@ public class BlockRenderer {
             BufferedImage out = new BufferedImage(BlockRenderer.WIDTH * 2, BlockRenderer.HEIGHT, BufferedImage.TYPE_INT_ARGB);
             Graphics outGraphics = out.getGraphics();
 
-            BufferedImage img = BlockRenderer.renderBlock(i, palette, BlockRenderer.Orientation.IsoTopWestNorth);
+            SupersamplingFilter sampling = "rotated_grid".equals(blockstate.antiAliasing) ? new RotatedGridSampling() : new NoSupersampling();
+
+            BufferedImage img = BlockRenderer.renderBlock(i, palette, BlockRenderer.Orientation.IsoTopWestNorth, sampling);
             outGraphics.drawImage(img, 0, 0, null);
 
-            BufferedImage img2 = BlockRenderer.renderBlock(i, palette, BlockRenderer.Orientation.IsoBottomEastSouth);
+            BufferedImage img2 = BlockRenderer.renderBlock(i, palette, BlockRenderer.Orientation.IsoBottomEastSouth, sampling);
             outGraphics.drawImage(img2, BlockRenderer.WIDTH, 0, null);
 
             outGraphics.dispose();
